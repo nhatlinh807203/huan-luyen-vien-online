@@ -1,0 +1,116 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// ====================== AUTH (giữ nguyên) ======================
+model User {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  role          String    @default("student") // student | teacher | admin
+  accounts      Account[]
+  sessions      Session[]
+
+  // Quan hệ mới
+  evaluationsGiven    Evaluation[] @relation("TeacherEvaluations")
+  evaluationsReceived Evaluation[] @relation("StudentEvaluations")
+  qrCodes             QrCode[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  id                String  @id @default(auto()) @map("_id") @db.ObjectId
+  userId            String  @db.ObjectId
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.String
+  access_token      String? @db.String
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.String
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  sessionToken String   @unique
+  userId       String   @db.ObjectId
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ====================== ĐÁNH GIÁ HỌC SINH ======================
+model Evaluation {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  
+  // Ai đánh giá (thường là giáo viên)
+  teacherId   String   @db.ObjectId
+  teacher     User     @relation("TeacherEvaluations", fields: [teacherId], references: [id])
+
+  // Học sinh được đánh giá
+  studentId   String   @db.ObjectId
+  student     User     @relation("StudentEvaluations", fields: [studentId], references: [id])
+
+  // Nội dung đánh giá
+  title       String?                          // Tiêu đề (vd: "Đánh giá tuần 3")
+  content     String?                          // Nhận xét chi tiết
+  score       Float?                           // Điểm số (nếu có)
+  maxScore    Float?   @default(10)            // Thang điểm
+  criteria    Json?                            // Các tiêu chí chi tiết (linh hoạt)
+  // Ví dụ criteria: { "kỹ thuật": 8, "thể lực": 7, "tinh thần": 9 }
+
+  type        String   @default("general")     // general | weekly | monthly | skill | attendance
+  status      String   @default("published")   // draft | published
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ====================== MÃ QR ======================
+model QrCode {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+
+  // Ai tạo mã QR (thường là giáo viên)
+  createdById String    @db.ObjectId
+  createdBy   User      @relation(fields: [createdById], references: [id])
+
+  // Thông tin mã QR
+  code        String    @unique                // Chuỗi mã QR (hoặc token)
+  title       String?                          // Tên mã (vd: "Điểm danh lớp sáng")
+  type        String    @default("attendance") // attendance | profile | payment | custom
+  data        Json?                            // Dữ liệu tùy chỉnh gắn với QR
+
+  // Giới hạn sử dụng
+  maxUses     Int?                             // null = không giới hạn
+  usedCount   Int       @default(0)
+  expiresAt   DateTime?                        // null = không hết hạn
+  isActive    Boolean   @default(true)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
